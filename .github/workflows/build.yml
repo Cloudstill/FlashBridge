@@ -125,20 +125,25 @@ jobs:
           {
             echo "## FlashBridge v${tag}"
             echo
-            echo "### 下载"
-            test -n "${{ steps.files.outputs.exe }}" && echo "- \`$(basename "${{ steps.files.outputs.exe }}")\` — Windows 可执行文件"
-            test -n "${{ steps.files.outputs.zip }}" && echo "- \`$(basename "${{ steps.files.outputs.zip }}")\` — Windows 绿色版(解压即用)"
+            echo "### 下载 / Downloads"
+            test -n "${{ steps.files.outputs.exe }}" && echo "- \`$(basename "${{ steps.files.outputs.exe }}")\` — Windows 可执行文件 / Windows executable"
+            test -n "${{ steps.files.outputs.zip }}" && echo "- \`$(basename "${{ steps.files.outputs.zip }}")\` — Windows 绿色版(解压即用) / Windows portable (unzip and run)"
             echo
           } > /tmp/release_notes.md
 
-          # Tag body written when tagging (bulleted feature list). Falls back
-          # gracefully if the tag is lightweight / has no body. Do NOT capture
+          # Optional highlights, only emitted when the annotated tag carries a
+          # body. Lightweight tags (the common case here) have no body, so this
+          # section is omitted entirely rather than left empty. Do NOT capture
           # the body into a shell variable — backticks would be re-evaluated.
           # Write git's raw output straight to a file and `cat` it.
+          # Detect a real (non-blank) tag body. `git tag -l --format='%(contents:body)'`
+          # always emits a trailing newline even when the body is empty, so a plain
+          # `[ -s ]` check is fooled into emitting an empty "What's New" section.
+          # grep for any non-whitespace character instead.
           git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > /tmp/tag_body.txt
-          if [ -s /tmp/tag_body.txt ]; then
+          if grep -q '[^[:space:]]' /tmp/tag_body.txt; then
             {
-              echo "### 本次更新"
+              echo "### 本次更新 / What's New"
               echo
               cat /tmp/tag_body.txt
               echo
@@ -146,7 +151,7 @@ jobs:
           fi
 
           {
-            echo "### 自上一个版本以来的提交"
+            echo "### 自上一个版本以来的提交 / Commits since last release"
             echo
             if git rev-list --tags --skip=1 --max-count=1 >/dev/null 2>&1; then
               prev="$(git describe --tags --abbrev=0 "${GITHUB_REF}^" 2>/dev/null || true)"
