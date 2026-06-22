@@ -1,0 +1,12 @@
+/target/
+
+# Logs / temp
+*.log
+*.tmp
+
+# Local working notes (not part of the published repo)
+CLAUDE.md
+plan.md
+
+# OS
+.DS_Store

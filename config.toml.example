@@ -1,0 +1,46 @@
+# Global settings
+mode = "whitelist"          # whitelist | blacklist
+debounce_ms = 500
+sound = true
+autostart = false
+hot_reload = true
+listen_redraw_flash = true   # Windows often reports flashing as HSHELL_REDRAW + lParam=true
+ignore_foreground_process = true
+deduplicate_same_title = true
+max_per_minute = 20         # 0 disables rate limiting
+respect_quiet_hours = true
+log_path = ""               # empty = %APPDATA%/FlashBridge/flash.log
+history_path = ""           # empty = %APPDATA%/FlashBridge/history.tsv
+history_limit = 500
+web_ui = false
+web_ui_port = 47621
+
+# Whitelist mode: only these processes are bridged.
+[[apps]]
+process = "WeChat.exe"
+display_name = "微信"
+icon = ""                   # empty = extract from target exe
+
+[[apps]]
+process = "Weixin.exe"
+display_name = "微信"
+icon = ""
+
+[[apps]]
+process = "WeChatAppEx.exe"
+display_name = "微信"
+icon = ""
+
+[[apps]]
+process = "DingTalk.exe"
+display_name = "钉钉"
+icon = ""
+
+[[apps]]
+process = "Feishu.exe"
+display_name = "飞书"
+icon = ""
+
+# Used only when mode = "blacklist"
+# [[ignore]]
+# process = "chrome.exe"

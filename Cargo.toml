@@ -1,0 +1,7 @@
+[package]
+name = "flashbridge"
+version = "0.1.0"
+edition = "2021"
+description = "Bridge Windows taskbar flash events to system notifications."
+license = "MIT"
+build = "build.rs"

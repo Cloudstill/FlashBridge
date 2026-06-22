@@ -1,0 +1,9 @@
+# Normalize line endings: text files are stored as LF in the repo and
+# converted to the platform native EOL on checkout. This keeps `cargo fmt
+# --check` stable across Windows/Linux CI runners.
+* text=auto eol=lf
+
+# Binary assets: never touch.
+*.ico binary
+*.png binary
+*.zip binary

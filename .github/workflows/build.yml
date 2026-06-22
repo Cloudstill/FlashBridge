@@ -1,0 +1,172 @@
+name: Build and Release
+
+# Two-job shape (build → release), mirroring the iPet CI model but trimmed for
+# a pure-Rust Windows project (no Tauri/npm frontend).
+#
+# Triggers (deliberately minimal to avoid duplicate runs):
+# - Pull request against master → build + test gate (merge gate, no release).
+# - Push a v* tag → build + test gate, then auto-publish a Release with the
+#   release .exe and a portable zip attached.
+# - Manual dispatch (workflow_dispatch) → build + test gate.
+#
+# We do NOT trigger on plain pushes to master. A merged PR already ran the same
+# build as the merge gate, so re-running on the post-merge push would be a
+# duplicate. The only push event that fires is a `v*` tag (for releases). If
+# you ever want a fresh build of master without a PR, use workflow_dispatch.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & test (windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      # --- Test gate: fail the run if any of these break. ---
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust type-check / clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Rust unit tests
+        run: cargo test --release
+
+      # --- Build the distributable artifacts. ---
+      - name: Release build
+        run: cargo build --release
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          $exe = "target/release/flashbridge.exe"
+          if (-not (Test-Path $exe)) { throw "release exe not found: $exe" }
+          $staging = "FlashBridge-portable"
+          New-Item -ItemType Directory -Force $staging | Out-Null
+          Copy-Item $exe "$staging/flashbridge.exe"
+          Copy-Item "config.toml.example" "$staging/config.toml.example"
+          Copy-Item "README.md" "$staging/README.md"
+          Compress-Archive -Path "$staging/*" -DestinationPath "FlashBridge-portable.zip" -Force
+
+      # --- Upload artifacts ---
+      - name: Upload release exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: flashbridge-exe
+          path: target/release/flashbridge.exe
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: flashbridge-portable-zip
+          path: FlashBridge-portable.zip
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish when a v* tag is pushed — branch/PR builds stop after `build`.
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        id: files
+        shell: bash
+        run: |
+          exe="$(ls artifacts/flashbridge-exe/flashbridge.exe 2>/dev/null | head -1 || true)"
+          zip="$(ls artifacts/flashbridge-portable-zip/FlashBridge-portable.zip 2>/dev/null | head -1 || true)"
+          echo "exe=$exe" >> "$GITHUB_OUTPUT"
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          ls -la "${exe:-/dev/null}" "${zip:-/dev/null}" 2>/dev/null || true
+
+      - name: Build release notes
+        id: notes
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          {
+            echo "## FlashBridge v${tag}"
+            echo
+            echo "### 下载"
+            test -n "${{ steps.files.outputs.exe }}" && echo "- \`$(basename "${{ steps.files.outputs.exe }}")\` — Windows 可执行文件"
+            test -n "${{ steps.files.outputs.zip }}" && echo "- \`$(basename "${{ steps.files.outputs.zip }}")\` — Windows 绿色版(解压即用)"
+            echo
+          } > /tmp/release_notes.md
+
+          # Tag body written when tagging (bulleted feature list). Falls back
+          # gracefully if the tag is lightweight / has no body. Do NOT capture
+          # the body into a shell variable — backticks would be re-evaluated.
+          # Write git's raw output straight to a file and `cat` it.
+          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > /tmp/tag_body.txt
+          if [ -s /tmp/tag_body.txt ]; then
+            {
+              echo "### 本次更新"
+              echo
+              cat /tmp/tag_body.txt
+              echo
+            } >> /tmp/release_notes.md
+          fi
+
+          {
+            echo "### 自上一个版本以来的提交"
+            echo
+            if git rev-list --tags --skip=1 --max-count=1 >/dev/null 2>&1; then
+              prev="$(git describe --tags --abbrev=0 "${GITHUB_REF}^" 2>/dev/null || true)"
+              range="${prev:+${prev}..}${GITHUB_REF}"
+              git log --pretty=format:'- %s (%h)' "$range" 2>/dev/null || git log --pretty=format:'- %s (%h)' -15
+            else
+              git log --pretty=format:'- %s (%h)' -15
+            fi
+          } >> /tmp/release_notes.md
+
+          echo "##[group]Release notes preview"
+          cat /tmp/release_notes.md
+          echo "##[endgroup]"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release_notes.md
+          files: |
+            ${{ steps.files.outputs.exe }}
+            ${{ steps.files.outputs.zip }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
